@@ -1,3 +1,5 @@
+python3 proxybotnert.py GET http://taget_ip 5 100 socks5.txt 50 60
+
 file/proxys/socks5-socks4
 
 file/useragent.txt
